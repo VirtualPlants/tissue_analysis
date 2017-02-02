@@ -1,0 +1,54 @@
+{
+  "_pkglts": {
+    "auto_install": true, 
+    "install_front_end": "stdout", 
+    "use_prompts": false, 
+    "version": 3
+  }, 
+  "base": {
+    "authors": [
+      [
+        "Jonathan Legrand", 
+        "jonathan.legrand AT ens-lyon.fr"
+      ], 
+      [
+        "Frederic Boudon", 
+        "frederic.boudon AT cirad.fr"
+      ]
+    ], 
+    "namespace": "vplants", 
+    "pkgname": "tissue_analysis", 
+    "url": null
+  }, 
+  "doc": {
+    "description": "This package enable the analysis of 4D tissue data using spatio-temporal cellular features extraction, organisation and clustering.", 
+    "keywords": []
+  }, 
+  "github": {
+    "owner": "{{ base.authors[0][0] }}", 
+    "project": "{{ base.pkgname }}", 
+    "url": "https://github.com/{{ github.owner }}/{{ github.project }}"
+  }, 
+  "license": {
+    "name": "cecill-c", 
+    "organization": "RDP, ENS de Lyon - UMR 5667 ", 
+    "project": "{{ base.pkgname }}", 
+    "year": 2015
+  }, 
+  "pysetup": {
+    "intended_versions": [
+      "27"
+    ], 
+    "require": []
+  }, 
+  "sphinx": {
+    "autodoc_dvlpt": true, 
+    "theme": "default"
+  }, 
+  "test": {}, 
+  "version": {
+    "major": 0, 
+    "minor": 9, 
+    "post": 2
+  }
+}

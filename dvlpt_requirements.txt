@@ -1,0 +1,6 @@
+# {# pkglts, pysetup
+mock
+nose
+sphinx
+
+# #}
