@@ -45,6 +45,8 @@ setup_kwds = dict(
 # #}
 # change setup_kwds below before the next pkglts tag
 
+setup_kwds['entry_points']['oalab.world'] = ['oalab.world/tissue_analysis = vplants.tissue_analysis.tissue_analysis_oalab.plugin.world']
+
 # do not change things below
 # {# pkglts, pysetup.call
 setup(**setup_kwds)
