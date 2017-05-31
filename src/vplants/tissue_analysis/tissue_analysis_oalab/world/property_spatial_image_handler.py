@@ -20,7 +20,7 @@
 import numpy as np 
 from openalea.core.observer import AbstractListener
 from openalea.oalab.widget.world import WorldModel
-from vplants.tissue_analysis.property_spatial_image import PropertySpatialImage, property_spatial_image_to_triangular_mesh
+from vplants.tissue_analysis.property_spatial_image import PropertySpatialImage, property_spatial_image_to_triangular_mesh, property_spatial_image_to_dataframe
 
 from tissuelab.gui.vtkviewer.vtkworldviewer import setdefault, world_kwargs
 
@@ -34,6 +34,7 @@ attribute_definition['property_image']['filter_property_name'] = dict(value=0,in
 attribute_definition['property_image']['filter_range'] = dict(value=(-1,101),interface="IIntRange",constraints=cst_extent_range,label="Filter Range")
 attribute_definition['property_image']["display_mesh"] = dict(value=True,interface="IBool",constraints={},label="Display Mesh")
 attribute_definition['property_image']["display_image"] = dict(value=False,interface="IBool",constraints={},label="Display Image")
+attribute_definition['property_image']["display_data"] = dict(value=True,interface="IBool",constraints={},label="Display Data")
 for axis in ['x', 'y', 'z']:
     label = u"Move " + axis + " slice"
     attribute_definition['property_image'][axis + "_slice"] = dict(value=(-1,101),interface="IIntRange",constraints=cst_extent_range,label=label)
@@ -140,6 +141,8 @@ class PropertyImageHandler(AbstractListener):
             for axis in ['x', 'y', 'z']:
                 setdefault(world_object, dtype, axis+'_slice', attribute_definition=attribute_definition, **kwargs)
 
+            setdefault(world_object, dtype, 'display_data', attribute_definition=attribute_definition, **kwargs)
+
             setdefault(world_object, dtype, 'filter_property_name', conv=_property_names, attribute_definition=attribute_definition, **kwargs)
             
             setdefault(world_object, dtype, 'filter_range', attribute_definition=attribute_definition, **kwargs)
@@ -162,26 +165,25 @@ class PropertyImageHandler(AbstractListener):
                 world_object.set_attribute('filter_range',value=tuple(filter_extent),constraints=dict(min=int(filter_extent[0]),max=int(filter_extent[1])))
 
 
+            labels = property_img.labels
+
+            if 'barycenter' in property_img.image_property_names():
+                extent = np.transpose([np.array(property_img.image_property('barycenter').values()).min(axis=0),np.array(property_img.image_property('barycenter').values()).max(axis=0)])
+                for dim,axis in enumerate(['x', 'y', 'z']):
+                    dim_slice = [extent[dim,0] + s*(extent[dim,1]-extent[dim,0])/100. for s in world_object[axis+"_slice"]]
+                    labels = [v for v in labels if property_img.image_property('barycenter')[v][dim]>=dim_slice[0]]
+                    labels = [v for v in labels if property_img.image_property('barycenter')[v][dim]<=dim_slice[1]]
+
+            if filter_name in property_img.image_property_names():
+                # filter_extent = [property_img.image_property(filter_name).values().min(),property_img.image_property(filter_name).values().max()]
+                # filter_slice = [filter_extent[0] + s*(filter_extent[1]-filter_extent[0])/100. for s in world_object["filter_range"]]
+                # labels = [v for v in labels if property_img.image_property(filter_name)[v]>=filter_slice[0]]
+                # labels = [v for v in labels if property_img.image_property(filter_name)[v]<=filter_slice[1]]
+                filter_range = world_object["filter_range"]
+                labels = [v for v in labels if property_img.image_property(filter_name)[v]>=filter_range[0]]
+                labels = [v for v in labels if property_img.image_property(filter_name)[v]<=filter_range[1]]
 
             if world_object['display_mesh']:
-                labels = property_img.labels
-
-                if 'barycenter' in property_img.image_property_names():
-                    extent = np.transpose([np.array(property_img.image_property('barycenter').values()).min(axis=0),np.array(property_img.image_property('barycenter').values()).max(axis=0)])
-                    for dim,axis in enumerate(['x', 'y', 'z']):
-                        dim_slice = [extent[dim,0] + s*(extent[dim,1]-extent[dim,0])/100. for s in world_object[axis+"_slice"]]
-                        labels = [v for v in labels if property_img.image_property('barycenter')[v][dim]>=dim_slice[0]]
-                        labels = [v for v in labels if property_img.image_property('barycenter')[v][dim]<=dim_slice[1]]
-
-                if filter_name in property_img.image_property_names():
-                    # filter_extent = [property_img.image_property(filter_name).values().min(),property_img.image_property(filter_name).values().max()]
-                    # filter_slice = [filter_extent[0] + s*(filter_extent[1]-filter_extent[0])/100. for s in world_object["filter_range"]]
-                    # labels = [v for v in labels if property_img.image_property(filter_name)[v]>=filter_slice[0]]
-                    # labels = [v for v in labels if property_img.image_property(filter_name)[v]<=filter_slice[1]]
-                    filter_range = world_object["filter_range"]
-                    labels = [v for v in labels if property_img.image_property(filter_name)[v]>=filter_range[0]]
-                    labels = [v for v in labels if property_img.image_property(filter_name)[v]<=filter_range[1]]
-
                 mesh,_ = property_spatial_image_to_triangular_mesh(property_img,property_name,labels)
 
                 if self.world.has_key(world_object.name+"_mesh"):
@@ -195,6 +197,21 @@ class PropertyImageHandler(AbstractListener):
             else:
                 if self.world.has_key(world_object.name+"_mesh"):
                     self.world.remove(world_object.name+"_mesh")
+
+            if world_object['display_data']:
+                df = property_spatial_image_to_dataframe(property_img)
+
+                df = df[np.any([df['label']==l for l in labels],axis=0)]
+
+                if self.world.has_key(world_object.name+"_data"):
+                    kwargs = world_kwargs(self.world[world_object.name+"_data"])
+                else:
+                    kwargs = {}
+                self.world.add(df,world_object.name+"_data",**kwargs)
+            else:
+                if self.world.has_key(world_object.name+"_data"):
+                    self.world.remove(world_object.name+"_data")
+  
 
             if world_object['display_image']:
                 # img = property_img.create_property_image(property_name)

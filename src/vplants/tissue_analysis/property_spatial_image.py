@@ -51,7 +51,8 @@ class PropertySpatialImage(object):
         self.set_image(image, **kwargs)
 
     def set_image(self, image, **kwargs):
-        self._image = SpatialImage(image, voxelsize=image.voxelsize, **kwargs) if image is not None else None
+        voxelsize = image.voxelsize if hasattr(image,'voxelsize') else None
+        self._image = SpatialImage(image, voxelsize=voxelsize, **kwargs) if image is not None else None
         
         if self._image is not None:
             if self._image_graph is None:
@@ -154,22 +155,6 @@ class PropertySpatialImage(object):
             property_image = property_dict.values(self.image)
             return SpatialImage(property_image.astype(dtype), voxelsize=self.image.voxelsize)
 
-    def _to_dataframe(self):
-        import pandas as pd
-        
-        if self._image is not None:
-            image_df = pd.DataFrame()
-            image_df['label'] = self._labels
-            for property_name in self.image_property_names():
-                property_data = self.image_property(property_name).values(image_df['label'])
-                if property_name in ['barycenter']:
-                    for i,dim in enumerate(['x','y','z']):
-                        image_df[property_name+"_"+dim] = property_data[:,i]
-                else:
-                    image_df[property_name] = property_data
-            image_df.set_index('label')
-            return image_df
-
     def compute_cell_meshes(self):
         from openalea.cellcomplex.property_topomesh.utils.image_tools import image_to_vtk_cell_polydata, vtk_polydata_to_cell_triangular_meshes, img_resize
         segmented_img = img_resize(deepcopy(self.image), sub_factor=4)
@@ -181,6 +166,22 @@ class PropertySpatialImage(object):
             self.compute_cell_meshes()
         return self._cell_meshes
 
+
+def property_spatial_image_to_dataframe(image):
+    import pandas as pd
+    
+    if image._image is not None:
+        image_df = pd.DataFrame()
+        image_df['label'] = image._labels
+        for property_name in image.image_property_names():
+            property_data = image.image_property(property_name).values(image_df['label'])
+            if property_name in ['barycenter']:
+                for i,dim in enumerate(['x','y','z']):
+                    image_df[property_name+"_"+dim] = property_data[:,i]
+            else:
+                image_df[property_name] = property_data
+        image_df.set_index('label')
+        return image_df
 
 def property_spatial_image_to_triangular_mesh(image, property_name=None, labels=None):
     from openalea.cellcomplex.property_topomesh.utils.image_tools import composed_triangular_mesh
