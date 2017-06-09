@@ -27,11 +27,12 @@ from copy import deepcopy
 
 class PropertySpatialImage(object):
 
-    def __init__(self, image=None, image_graph=None, background=1, **kwargs):
+    def __init__(self, image=None, image_graph=None, background=1, ignore_cells_at_stack_margins=False, **kwargs):
         
         self._properties = {}
 
         self.background = background
+        self.ignore_cells_at_stack_margins = ignore_cells_at_stack_margins
 
         self._image_graph = None
         self._labels = None
@@ -56,7 +57,7 @@ class PropertySpatialImage(object):
         
         if self._image is not None:
             if self._image_graph is None:
-                self.set_image_graph(graph_from_image(self._image, background=self.background, spatio_temporal_properties=['barycenter'], ignore_cells_at_stack_margins=True))
+                self.set_image_graph(graph_from_image(self._image, background=self.background, spatio_temporal_properties=['barycenter'], ignore_cells_at_stack_margins=self.ignore_cells_at_stack_margins))
         else:
             self._image_graph = None
             self._labels = None
@@ -119,13 +120,13 @@ class PropertySpatialImage(object):
         else:
             if self._image is not None:
                 if property_name in ['barycenter','volume']:
-                    graph = graph_from_image(self._image,background=self.background,spatio_temporal_properties=[property_name],ignore_cells_at_stack_margins=True)
+                    graph = graph_from_image(self._image,background=self.background,spatio_temporal_properties=[property_name],ignore_cells_at_stack_margins=self.ignore_cells_at_stack_margins)
                     property_dict = graph.vertex_property(property_name)
                 elif property_name == 'neighborhood_size':
                     neighbors = [self.image_graph.neighbors(l) for l in self.labels]
                     property_dict = dict(zip(self.labels,map(len,neighbors)))
                 elif property_name == 'layer':
-                    graph = graph_from_image(self._image,background=self.background,spatio_temporal_properties=['L1'],ignore_cells_at_stack_margins=True)
+                    graph = graph_from_image(self._image,background=self.background,spatio_temporal_properties=['L1'],ignore_cells_at_stack_margins=self.ignore_cells_at_stack_margins)
                     first_layer = graph.vertex_property('L1')
                     second_layer_cells = [v for v in graph.vertices() if np.any([first_layer[n] for n in graph.neighbors(v)]) and not first_layer[v]]
                     second_layer = dict(zip(list(graph.vertices()),[v in second_layer_cells for v in graph.vertices()]))
@@ -157,8 +158,9 @@ class PropertySpatialImage(object):
 
     def compute_cell_meshes(self):
         from openalea.cellcomplex.property_topomesh.utils.image_tools import image_to_vtk_cell_polydata, vtk_polydata_to_cell_triangular_meshes, img_resize
-        segmented_img = img_resize(deepcopy(self.image), sub_factor=4)
-        self._cell_meshes = vtk_polydata_to_cell_triangular_meshes(image_to_vtk_cell_polydata(segmented_img,coef=0.98,mesh_fineness=0.75,smooth_factor=1.1))
+        from timagetk.components import SpatialImage as TissueImage
+        segmented_img = img_resize(TissueImage(deepcopy(self.image),self.image.voxelsize), sub_factor=3)
+        self._cell_meshes = vtk_polydata_to_cell_triangular_meshes(image_to_vtk_cell_polydata(segmented_img,coef=0.99,mesh_fineness=1,smooth_factor=1.5))
 
     @property
     def cell_meshes(self):
