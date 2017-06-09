@@ -159,7 +159,7 @@ class PropertySpatialImage(object):
     def compute_cell_meshes(self):
         from openalea.cellcomplex.property_topomesh.utils.image_tools import image_to_vtk_cell_polydata, vtk_polydata_to_cell_triangular_meshes, img_resize
         from timagetk.components import SpatialImage as TissueImage
-        segmented_img = img_resize(TissueImage(deepcopy(self.image),self.image.voxelsize), sub_factor=3)
+        segmented_img = img_resize(TissueImage(deepcopy(self.image),voxelsize=self.image.voxelsize), sub_factor=3)
         self._cell_meshes = vtk_polydata_to_cell_triangular_meshes(image_to_vtk_cell_polydata(segmented_img,coef=0.99,mesh_fineness=1,smooth_factor=1.5))
 
     @property
