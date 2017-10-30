@@ -26,13 +26,15 @@ from tissuelab.gui.vtkviewer.vtkworldviewer import setdefault, world_kwargs
 
 
 cst_extent_range = dict(step=1, min=-1, max=101)
+cst_proba = dict(step=0.01, min=0, max=1)
 
 attribute_definition = {}
 attribute_definition['property_image'] = {}
 attribute_definition['property_image']['property_name'] = dict(value=0,interface="IEnumStr",constraints=dict(enum=[""]),label="Property")
 attribute_definition['property_image']['filter_property_name'] = dict(value=0,interface="IEnumStr",constraints=dict(enum=[""]),label="Filter Property")
 attribute_definition['property_image']['filter_range'] = dict(value=(-1,101),interface="IIntRange",constraints=cst_extent_range,label="Filter Range")
-attribute_definition['property_image']["display_mesh"] = dict(value=True,interface="IBool",constraints={},label="Display Mesh")
+attribute_definition['property_image']["display_mesh"] = dict(value=True,interface="IBool",constraints={},label="Display Mesh")  
+attribute_definition['property_image']["coef"] = dict(value=1,interface="IFloat",constraints=cst_proba,label="Coef") 
 attribute_definition['property_image']["display_image"] = dict(value=False,interface="IBool",constraints={},label="Display Image")
 attribute_definition['property_image']["display_data"] = dict(value=True,interface="IBool",constraints={},label="Display Data")
 for axis in ['x', 'y', 'z']:
@@ -138,6 +140,8 @@ class PropertyImageHandler(AbstractListener):
 
             setdefault(world_object, dtype, 'display_mesh', attribute_definition=attribute_definition, **kwargs)
 
+            setdefault(world_object, dtype, 'coef', attribute_definition=attribute_definition, **kwargs)
+
             for axis in ['x', 'y', 'z']:
                 setdefault(world_object, dtype, axis+'_slice', attribute_definition=attribute_definition, **kwargs)
 
@@ -156,6 +160,7 @@ class PropertyImageHandler(AbstractListener):
             property_img = world_object.data
             property_name = world_object['property_name']
             filter_name = world_object['filter_property_name']
+            coef = world_object['coef']
 
             if attribute_name == 'filter_property_name':
                 if filter_name in property_img.image_property_names():
@@ -184,7 +189,7 @@ class PropertyImageHandler(AbstractListener):
                 labels = [v for v in labels if property_img.image_property(filter_name)[v]<=filter_range[1]]
 
             if world_object['display_mesh']:
-                mesh,_ = property_spatial_image_to_triangular_mesh(property_img,property_name,labels)
+                mesh,_ = property_spatial_image_to_triangular_mesh(property_img,property_name,labels,coef)
 
                 if self.world.has_key(world_object.name+"_mesh"):
                     kwargs = world_kwargs(self.world[world_object.name+"_mesh"])

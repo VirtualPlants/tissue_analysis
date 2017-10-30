@@ -18,6 +18,8 @@
 ################################################################################
 
 import numpy as np 
+import scipy.ndimage as nd
+from scipy.cluster.vq import vq
 
 from temporal_graph_from_image import SpatialImage, graph_from_image
 from openalea.container import array_dict
@@ -27,12 +29,13 @@ from copy import deepcopy
 
 class PropertySpatialImage(object):
 
-    def __init__(self, image=None, image_graph=None, background=1, ignore_cells_at_stack_margins=False, **kwargs):
+    def __init__(self, image=None, image_graph=None, background=1, ignore_cells_at_stack_margins=False, min_contact_area=None, **kwargs):
         
         self._properties = {}
 
         self.background = background
         self.ignore_cells_at_stack_margins = ignore_cells_at_stack_margins
+        self.min_contact_area = min_contact_area
 
         self._image_graph = None
         self._labels = None
@@ -57,7 +60,7 @@ class PropertySpatialImage(object):
         
         if self._image is not None:
             if self._image_graph is None:
-                self.set_image_graph(graph_from_image(self._image, background=self.background, spatio_temporal_properties=['barycenter'], ignore_cells_at_stack_margins=self.ignore_cells_at_stack_margins))
+                self.set_image_graph(graph_from_image(self._image, background=self.background, spatio_temporal_properties=['barycenter'], ignore_cells_at_stack_margins=self.ignore_cells_at_stack_margins, min_contact_area=self.min_contact_area))
         else:
             self._image_graph = None
             self._labels = None
@@ -84,6 +87,12 @@ class PropertySpatialImage(object):
     @property
     def labels(self):
         return self._labels
+
+    def has_image_property(self, property_name, is_computed=True):
+        if is_computed:
+            return (property_name in self._properties.keys()) and np.all(self._properties[property_name].keys() == self.labels)
+        else:
+            return (property_name in self._properties.keys())
 
     def update_image_property(self, property_name, property_data, erase_property=False):
         if isinstance(property_data,list) or isinstance(property_data,np.ndarray):
@@ -112,11 +121,17 @@ class PropertySpatialImage(object):
         return np.sort(self._properties.keys())
 
 
-    def compute_image_property(self, property_name):
+    def compute_image_property(self, property_name, min_contact_area=None, sub_factor=8.):
+        """
+        """
+        computable_properties = ['barycenter','volume','neighborhood_size','layer','mean_curvature','gaussian_curvature']
         try:
-            assert property_name in ['barycenter','volume','neighborhood_size','layer']
+            assert property_name in computable_properties
         except:
             print "Property \""+property_name+"\" can not be computed on image"
+            print "Try with one of the following :"
+            for p in computable_properties:
+                print "  * "+p
         else:
             if self._image is not None:
                 if property_name in ['barycenter','volume']:
@@ -126,19 +141,68 @@ class PropertySpatialImage(object):
                     neighbors = [self.image_graph.neighbors(l) for l in self.labels]
                     property_dict = dict(zip(self.labels,map(len,neighbors)))
                 elif property_name == 'layer':
-                    graph = graph_from_image(self._image,background=self.background,spatio_temporal_properties=['L1'],ignore_cells_at_stack_margins=self.ignore_cells_at_stack_margins)
+                    if min_contact_area is None:
+                        min_contact_area = self.min_contact_area
+                    graph = graph_from_image(self._image,background=self.background,spatio_temporal_properties=['L1'],ignore_cells_at_stack_margins=self.ignore_cells_at_stack_margins, min_contact_area=min_contact_area)
                     first_layer = graph.vertex_property('L1')
                     second_layer_cells = [v for v in graph.vertices() if np.any([first_layer[n] for n in graph.neighbors(v)]) and not first_layer[v]]
                     second_layer = dict(zip(list(graph.vertices()),[v in second_layer_cells for v in graph.vertices()]))
-                    property_dict = dict(zip(self.labels,[1 if first_layer[l] else 2 if second_layer[l] else 0 for l in self.labels]))
+                    property_dict = dict(zip(self.labels,[1 if first_layer[l] else 2 if second_layer[l] else 3 for l in self.labels]))
+                elif property_name in ['mean_curvature','gaussian_curvature']:
+                    if not self.has_image_property('barycenter'):
+                        self.compute_image_property('barycenter')
+                    if not self.has_image_property('layer'):
+                        print "--> Computing layer property"
+                        self.compute_image_property('layer')
 
+                    cell_centers = self.image_property('barycenter')
+                    L1_cells = self.labels[self.image_property('layer').values()==1]
+                    
+                    from openalea.cellcomplex.property_topomesh.utils.implicit_surfaces import implicit_surface_topomesh
+                    from openalea.cellcomplex.property_topomesh.property_topomesh_analysis import compute_topomesh_property, compute_topomesh_vertex_property_from_faces
+                    from openalea.cellcomplex.property_topomesh.property_topomesh_optimization import property_topomesh_vertices_deformation, topomesh_triangle_split
+
+                    sub_binary_image = (self._image!=self.background).astype(float)[::sub_factor,::sub_factor,::sub_factor]
+                    surface_topomesh = implicit_surface_topomesh(sub_binary_image,np.array(sub_binary_image.shape),sub_factor*np.array(self._image.voxelsize),center=False)
+                    property_topomesh_vertices_deformation(surface_topomesh,iterations=10)
+
+                    compute_topomesh_property(surface_topomesh,'barycenter',2)
+                    compute_topomesh_property(surface_topomesh,'normal',2,normal_method='orientation')
+
+                    compute_topomesh_vertex_property_from_faces(surface_topomesh,'normal',adjacency_sigma=2,neighborhood=5)
+                    compute_topomesh_property(surface_topomesh,'mean_curvature',2)
+                    compute_topomesh_vertex_property_from_faces(surface_topomesh,property_name,adjacency_sigma=2,neighborhood=5)
+
+                    surface_cells = L1_cells[vq(surface_topomesh.wisp_property('barycenter',0).values(),cell_centers.values(L1_cells))[0]]
+                    surface_topomesh.update_wisp_property('label',0,array_dict(surface_cells,list(surface_topomesh.wisps(0))))
+
+                    L1_cell_property = nd.sum(surface_topomesh.wisp_property(property_name,0).values(),surface_cells,index=L1_cells)/nd.sum(np.ones_like(surface_cells),surface_cells,index=L1_cells)
+                    L1_cell_property = array_dict(L1_cell_property,L1_cells)    
+                    property_dict = array_dict([L1_cell_property[l] if (l in L1_cells) and (not np.isnan(L1_cell_property[l])) else 0 for l in self.labels],self.labels)
                 
                 property_data = [property_dict[l] for l in self.labels]
                 self.update_image_property(property_name,property_data)
 
-    def compute_image_properties(self, property_names=['barycenter','volume','neighborhood_size','layer']):
-        for property_name in property_names:
+    def compute_default_image_properties(self):
+        default_properties = ['barycenter','volume','neighborhood_size','layer']
+        for property_name in default_properties:
             self.compute_image_property(property_name)
+
+    def compute_image_property_from_function(self, property_name, property_function):
+        """
+        property_function : a function taking as an input a binary image and computing
+        a specific cell property.
+        """
+        from time import time
+        start_time = time()
+        print "--> Computing "+property_name+" property"
+        self._properties[property_name] = array_dict()
+        for l in self.labels:
+            label_start_time = time()
+            binary_img = (self.image == l).astype(int)
+            self._properties[property_name][l] = property_function(binary_img)
+            print "  --> Computing label "+str(l)+" "+property_name+" [",time()-label_start_time," s]"
+        print "<-- Computing "+property_name+" property [",time()-start_time," s]"
 
     def create_property_image(self, property_name=None, dtype=np.uint16):
         if property_name not in self.image_property_names():
@@ -186,13 +250,19 @@ def property_spatial_image_to_dataframe(image):
         image_df.set_index('label')
         return image_df
 
-def property_spatial_image_to_triangular_mesh(image, property_name=None, labels=None):
+def property_spatial_image_to_triangular_mesh(image, property_name=None, labels=None, coef=1):
     from openalea.cellcomplex.property_topomesh.utils.image_tools import composed_triangular_mesh
 
-    cell_triangular_meshes = image.cell_meshes
+    cell_triangular_meshes = deepcopy(image.cell_meshes)
     img_labels = cell_triangular_meshes.keys()
     if labels is None:
         labels = image.labels
+
+    if coef != 1:
+        for l in labels:
+            cell_center = np.mean(cell_triangular_meshes[l].points.values(),axis=0)
+            points = cell_center + coef*(cell_triangular_meshes[l].points.values()-cell_center)
+            cell_triangular_meshes[l].points = array_dict(points,cell_triangular_meshes[l].points.keys())
 
     mesh, matching = composed_triangular_mesh(dict([(c,cell_triangular_meshes[c]) for c in labels if c in cell_triangular_meshes.keys()]))
 
