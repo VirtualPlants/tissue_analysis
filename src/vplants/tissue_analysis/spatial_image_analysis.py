@@ -48,7 +48,7 @@ def wall(mask_img, label_id):
     """
     img = (mask_img == label_id)
     dil = nd.binary_dilation(img)
-    contact = dil - img
+    contact = (np.asarray(dil).astype(int) - np.asarray(img).astype(int)).astype(bool)
     return mask_img[contact]
 
 
@@ -946,7 +946,7 @@ class AbstractSpatialImageAnalysis(object):
         wall = {}
         for a in xrange(len(xyz_kernels)):
             dil = nd.binary_dilation(mask_img, structure=xyz_kernels[a])
-            frontier = dilated_bbox_img[dil-mask_img]
+            frontier = dilated_bbox_img[(np.asarray(dil).astype(int) - np.asarray(mask_img).astype(int)).astype(bool)]
 
             for n in neighbors:
                 nb_pix = len(frontier[frontier==n])
